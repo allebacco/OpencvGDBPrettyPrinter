@@ -6,3 +6,7 @@ python
 exec(open('<path to opencv_dumper.py>').read())
 end
 ```
+
+Prerequisite:
+
+# Numpy

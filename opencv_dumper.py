@@ -16,12 +16,15 @@ end
 '''
 
 import math
+import numpy as np
 
 
 DEPTH_NAMES = ['CV_8U', 'CV_8S', 'CV_16U', 'CV_16S', 'CV_32S', 'CV_32F', 'CV_64F', 'undefined']
 DEPTH_TYPE = ['unsigned char', 'char', 'unsigned short', 'short', 'int', 'float', 'double', 'void']
+DEPTH_NP_TYPE = [np.uint8, np.int8, np.uint16, np.int16, np.int32, np.float32, np.float64, np.uint8]
 DEPTH_PY_TYPE = ['B', 'b', 'H', 'h', 'i', 'f', 'd', 'i']
-DEPTH_BYTE_SIZE = [1, 1, 2, 2, 4, 4, 8, 8]
+DEPTH_BYTE_SIZE = [1, 1, 2, 2, 4, 4, 8, 1]
+
 
 def qdump__cv__Mat(self, value):
     '''
@@ -36,14 +39,25 @@ def qdump__cv__Mat(self, value):
     depth = min(depth, 7)
     cv_type_name = DEPTH_NAMES[depth]
     cv_type = DEPTH_TYPE[depth]
-    #cv_py_type = depth_py_type[depth]
+    data_byte_size = DEPTH_BYTE_SIZE[depth]
+    np_dtype = DEPTH_NP_TYPE[depth]
 
     cv_type_name += 'C%d' % channels
 
     rows = int(value['rows'])
     cols = int(value['cols'])
-    #self.putValue(r"OpenCV image", encoding=0)
-    self.putValue('%dx%d %s' % (cols, rows, cv_type_name))
+
+    value_str = '%dx%d %s' % (cols, rows, cv_type_name)
+    refcount = int(value['refcount'].dereference())
+    if refcount <= 0:
+        value_str = 'unistantiated'
+    elif refcount == 1:
+        value_str += ' unique'
+    else:
+        value_str += ' shared'
+
+    #self.putValue('%dx%d %s' % (cols, rows, cv_type_name))
+    self.putValue(value_str)
 
     line_step = int(value['step']['p'][0])
 
@@ -60,7 +74,6 @@ def qdump__cv__Mat(self, value):
             self.putSubItem('refcount', value['refcount'])
             self.putSubItem('size', value['size'])
             self.putSubItem('step', value['step'])
-
 
             # Put data array
             image_data_start = int(value['data'])
@@ -83,19 +96,19 @@ def qdump__cv__Mat(self, value):
                                 # Limit output to improve performance
                                 if s > size:
                                     break
-                                # Handle multiple channels
-                                for c in range(0, channels):
-                                    v = (p + i * cols * channels + j * channels + c).dereference()
-                                    with SubItem(self, s):
-                                        self.putName("[%3d,%3d][%d]" % (i, j, c))
-                                        self.putValue(v)
+                                v = (p + i * cols * channels + j * channels)
+                                d = self.readRawMemory(v, channels*data_byte_size)
+                                array = np.frombuffer(d, dtype=np_dtype, count=channels)
+                                array = np.array_str(array)
+                                with SubItem(self, s):
+                                        self.putName("[%3d,%3d]" % (i, j))
+                                        self.putValue(array)
                                 s = s + 1
 
                             # Limit output to improve performance
                             if s > size:
                                 break
 
-            #self.putSubItem('dataend', value['dataend'])
             dataend = 0
             with SubItem(self, 'dataend'):
                 p = value['dataend'].cast(self.lookupType('unsigned char').pointer())
@@ -104,7 +117,6 @@ def qdump__cv__Mat(self, value):
                 self.putType('unsigned char*')
                 self.putNumChild(0)
 
-            #self.putSubItem('datastart', value['datastart'])
             datastart = 0
             with SubItem(self, 'datastart'):
                 p = value['datastart'].cast(self.lookupType('unsigned char').pointer())
@@ -113,7 +125,6 @@ def qdump__cv__Mat(self, value):
                 self.putType('unsigned char*')
                 self.putNumChild(0)
 
-            #self.putSubItem('datalimit', value['datalimit'])
             with SubItem(self, 'datalimit'):
                 p = value['datalimit'].cast(self.lookupType('unsigned char').pointer())
                 datalimit = int(p)
@@ -122,7 +133,7 @@ def qdump__cv__Mat(self, value):
                 self.putNumChild(0)
 
             # Put metadata to improve output informations
-            data_byte_size = DEPTH_BYTE_SIZE[depth]
+            
             with SubItem(self, 'stride'):
                 self.putValue(str(line_step))
                 self.putNumChild(0)
